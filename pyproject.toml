@@ -1,25 +1,16 @@
-[build-system]
-requires = ["setuptools>=68.0"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "roboresearch"
 version = "0.1.0"
-description = "Autonomous agentic AI system for robot manipulation research"
+description = "Autoresearch for robotics — AI agent iterates on robot manipulation in MuJoCo"
 requires-python = ">=3.11"
 dependencies = [
-    "anthropic[vertex]",
-    "mcp",
+    "stable-baselines3",
+    "sb3-contrib",
     "mujoco",
     "gymnasium[mujoco]",
     "gymnasium-robotics",
-    "stable-baselines3",
     "torch",
-    "streamlit",
-    "plotly",
-    "pandas",
-    "gitpython",
-    "rich",
+    "mcp",
     "pillow",
 ]
 
@@ -27,11 +18,7 @@ dependencies = [
 dev = [
     "ruff",
     "pyright",
-    "pytest",
 ]
-
-[tool.setuptools.packages.find]
-include = ["roboresearch*"]
 
 [tool.ruff]
 line-length = 100

@@ -1,0 +1,32 @@
+[start] 16:15:50 algo=TQC subtask='microwave' device=cpu time_budget=3600s
+[hb]   step=   1000 elapsed=   1s
+[hb]   step=   2000 elapsed=  32s
+[hb]   step=   3000 elapsed=  61s
+[hb]   step=   4000 elapsed=  91s
+[hb]   step=   5000 elapsed= 121s
+[eval] step=   5000 elapsed= 121s success_rate=0.00 mean_reward=+0.00
+[hb]   step=   6000 elapsed= 148s
+[hb]   step=   7000 elapsed= 173s
+[hb]   step=   8000 elapsed= 203s
+[hb]   step=   9000 elapsed= 227s
+[hb]   step=  10000 elapsed= 251s
+[eval] step=  10000 elapsed= 251s success_rate=0.00 mean_reward=+0.00
+[hb]   step=  11000 elapsed= 278s
+[hb]   step=  12000 elapsed= 307s
+[hb]   step=  13000 elapsed= 335s
+[hb]   step=  14000 elapsed= 364s
+[hb]   step=  15000 elapsed= 391s
+[eval] step=  15000 elapsed= 391s success_rate=0.00 mean_reward=+0.00
+[hb]   step=  16000 elapsed= 418s
+[hb]   step=  17000 elapsed= 443s
+[hb]   step=  18000 elapsed= 468s
+[hb]   step=  19000 elapsed= 493s
+[hb]   step=  20000 elapsed= 518s
+[eval] step=  20000 elapsed= 518s success_rate=1.00 mean_reward=+1.00 *NEW_BEST*
+[hb]   step=  21000 elapsed= 543s
+[hb]   step=  22000 elapsed= 570s
+[hb]   step=  23000 elapsed= 596s
+[hb]   step=  24000 elapsed= 623s
+[hb]   step=  25000 elapsed= 648s
+[eval] step=  25000 elapsed= 648s success_rate=1.00 mean_reward=+1.00
+[stop] step=25000 elapsed=648s early-stop after 2 perfect evals; saved model_checkpoint.zip

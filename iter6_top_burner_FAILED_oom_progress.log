@@ -1,0 +1,13 @@
+[start] 14:04:37 algo=TQC subtask='top burner' device=cpu time_budget=3600s
+[hb]   step=   1000 elapsed=   1s
+[hb]   step=   2000 elapsed=  26s
+[hb]   step=   3000 elapsed=  52s
+[hb]   step=   4000 elapsed=  77s
+[hb]   step=   5000 elapsed= 103s
+[eval] step=   5000 elapsed= 103s success_rate=0.00 mean_reward=+0.00
+[hb]   step=   6000 elapsed= 128s
+[hb]   step=   7000 elapsed= 151s
+[hb]   step=   8000 elapsed= 175s
+[hb]   step=   9000 elapsed= 659s
+[hb]   step=  10000 elapsed=3008s
+[eval] step=  10000 elapsed=3008s success_rate=0.00 mean_reward=+0.00

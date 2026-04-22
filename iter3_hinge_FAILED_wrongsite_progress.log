@@ -1,0 +1,67 @@
+[start] 11:38:36 algo=TQC subtask='hinge cabinet' device=cpu time_budget=3600s
+[hb]   step=   1000 elapsed=   1s
+[hb]   step=   2000 elapsed=  30s
+[hb]   step=   3000 elapsed=  61s
+[hb]   step=   4000 elapsed=  88s
+[hb]   step=   5000 elapsed= 116s
+[eval] step=   5000 elapsed= 116s success_rate=0.00 mean_reward=+0.00
+[hb]   step=   6000 elapsed= 142s
+[hb]   step=   7000 elapsed= 167s
+[hb]   step=   8000 elapsed= 191s
+[hb]   step=   9000 elapsed= 215s
+[hb]   step=  10000 elapsed= 240s
+[eval] step=  10000 elapsed= 240s success_rate=0.00 mean_reward=+0.00
+[hb]   step=  11000 elapsed= 267s
+[hb]   step=  12000 elapsed= 293s
+[hb]   step=  13000 elapsed= 319s
+[hb]   step=  14000 elapsed= 343s
+[hb]   step=  15000 elapsed= 368s
+[eval] step=  15000 elapsed= 368s success_rate=0.00 mean_reward=+0.00
+[hb]   step=  16000 elapsed= 394s
+[hb]   step=  17000 elapsed= 419s
+[hb]   step=  18000 elapsed= 444s
+[hb]   step=  19000 elapsed= 470s
+[hb]   step=  20000 elapsed= 501s
+[eval] step=  20000 elapsed= 501s success_rate=0.00 mean_reward=+0.00
+[hb]   step=  21000 elapsed= 532s
+[hb]   step=  22000 elapsed= 565s
+[hb]   step=  23000 elapsed= 609s
+[hb]   step=  24000 elapsed= 657s
+[hb]   step=  25000 elapsed= 706s
+[eval] step=  25000 elapsed= 706s success_rate=0.00 mean_reward=+0.00
+[hb]   step=  26000 elapsed= 751s
+[hb]   step=  27000 elapsed= 785s
+[hb]   step=  28000 elapsed= 821s
+[hb]   step=  29000 elapsed= 884s
+[hb]   step=  30000 elapsed= 940s
+[eval] step=  30000 elapsed= 940s success_rate=0.00 mean_reward=+0.00
+[hb]   step=  31000 elapsed= 989s
+[hb]   step=  32000 elapsed=1024s
+[hb]   step=  33000 elapsed=1056s
+[hb]   step=  34000 elapsed=1090s
+[hb]   step=  35000 elapsed=1121s
+[eval] step=  35000 elapsed=1121s success_rate=0.00 mean_reward=+0.00
+[hb]   step=  36000 elapsed=1156s
+[hb]   step=  37000 elapsed=1189s
+[hb]   step=  38000 elapsed=1227s
+[hb]   step=  39000 elapsed=1274s
+[hb]   step=  40000 elapsed=1334s
+[eval] step=  40000 elapsed=1334s success_rate=0.00 mean_reward=+0.00
+[hb]   step=  41000 elapsed=1385s
+[hb]   step=  42000 elapsed=1422s
+[hb]   step=  43000 elapsed=1462s
+[hb]   step=  44000 elapsed=1495s
+[hb]   step=  45000 elapsed=1529s
+[eval] step=  45000 elapsed=1529s success_rate=0.00 mean_reward=+0.00
+[hb]   step=  46000 elapsed=1569s
+[hb]   step=  47000 elapsed=1605s
+[hb]   step=  48000 elapsed=1634s
+[hb]   step=  49000 elapsed=1667s
+[hb]   step=  50000 elapsed=1701s
+[eval] step=  50000 elapsed=1701s success_rate=0.00 mean_reward=+0.00
+[hb]   step=  51000 elapsed=1741s
+[hb]   step=  52000 elapsed=1770s
+[hb]   step=  53000 elapsed=1803s
+[hb]   step=  54000 elapsed=1836s
+[hb]   step=  55000 elapsed=1869s
+[eval] step=  55000 elapsed=1869s success_rate=0.00 mean_reward=+0.00

@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "simulation": {
+      "command": "python",
+      "args": ["mcp/simulation.py"]
+    },
+    "evaluation": {
+      "command": "python",
+      "args": ["mcp/evaluation.py"]
+    },
+    "registry": {
+      "command": "python",
+      "args": ["mcp/registry.py"]
+    }
+  }
+}

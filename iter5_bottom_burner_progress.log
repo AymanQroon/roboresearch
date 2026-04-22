@@ -1,0 +1,74 @@
+[start] 13:33:44 algo=TQC subtask='bottom burner' device=cpu time_budget=3600s
+[hb]   step=   1000 elapsed=   1s
+[hb]   step=   2000 elapsed=  27s
+[hb]   step=   3000 elapsed=  55s
+[hb]   step=   4000 elapsed=  81s
+[hb]   step=   5000 elapsed= 108s
+[eval] step=   5000 elapsed= 108s success_rate=0.00 mean_reward=+0.00
+[hb]   step=   6000 elapsed= 133s
+[hb]   step=   7000 elapsed= 158s
+[hb]   step=   8000 elapsed= 181s
+[hb]   step=   9000 elapsed= 206s
+[hb]   step=  10000 elapsed= 231s
+[eval] step=  10000 elapsed= 231s success_rate=0.00 mean_reward=+0.00
+[hb]   step=  11000 elapsed= 256s
+[hb]   step=  12000 elapsed= 283s
+[hb]   step=  13000 elapsed= 308s
+[hb]   step=  14000 elapsed= 334s
+[hb]   step=  15000 elapsed= 358s
+[eval] step=  15000 elapsed= 358s success_rate=0.00 mean_reward=+0.00
+[hb]   step=  16000 elapsed= 383s
+[hb]   step=  17000 elapsed= 409s
+[hb]   step=  18000 elapsed= 434s
+[hb]   step=  19000 elapsed= 459s
+[hb]   step=  20000 elapsed= 483s
+[eval] step=  20000 elapsed= 483s success_rate=0.00 mean_reward=+0.00
+[hb]   step=  21000 elapsed= 511s
+[hb]   step=  22000 elapsed= 537s
+[hb]   step=  23000 elapsed= 563s
+[hb]   step=  24000 elapsed= 590s
+[hb]   step=  25000 elapsed= 617s
+[eval] step=  25000 elapsed= 617s success_rate=0.00 mean_reward=+0.00
+[hb]   step=  26000 elapsed= 646s
+[hb]   step=  27000 elapsed= 672s
+[hb]   step=  28000 elapsed= 700s
+[hb]   step=  29000 elapsed= 729s
+[hb]   step=  30000 elapsed= 757s
+[eval] step=  30000 elapsed= 757s success_rate=0.00 mean_reward=+0.00
+[hb]   step=  31000 elapsed= 786s
+[hb]   step=  32000 elapsed= 814s
+[hb]   step=  33000 elapsed= 841s
+[hb]   step=  34000 elapsed= 868s
+[hb]   step=  35000 elapsed= 896s
+[eval] step=  35000 elapsed= 896s success_rate=0.00 mean_reward=+0.00
+[hb]   step=  36000 elapsed= 923s
+[hb]   step=  37000 elapsed= 950s
+[hb]   step=  38000 elapsed= 975s
+[hb]   step=  39000 elapsed=1001s
+[hb]   step=  40000 elapsed=1027s
+[eval] step=  40000 elapsed=1027s success_rate=0.00 mean_reward=+0.00
+[hb]   step=  41000 elapsed=1055s
+[hb]   step=  42000 elapsed=1080s
+[hb]   step=  43000 elapsed=1105s
+[hb]   step=  44000 elapsed=1132s
+[hb]   step=  45000 elapsed=1159s
+[eval] step=  45000 elapsed=1159s success_rate=0.33 mean_reward=+0.33 *NEW_BEST*
+[hb]   step=  46000 elapsed=1185s
+[hb]   step=  47000 elapsed=1211s
+[hb]   step=  48000 elapsed=1241s
+[hb]   step=  49000 elapsed=1268s
+[hb]   step=  50000 elapsed=1297s
+[eval] step=  50000 elapsed=1297s success_rate=0.67 mean_reward=+0.67 *NEW_BEST*
+[hb]   step=  51000 elapsed=1325s
+[hb]   step=  52000 elapsed=1354s
+[hb]   step=  53000 elapsed=1383s
+[hb]   step=  54000 elapsed=1411s
+[hb]   step=  55000 elapsed=1440s
+[eval] step=  55000 elapsed=1440s success_rate=1.00 mean_reward=+1.00 *NEW_BEST*
+[hb]   step=  56000 elapsed=1466s
+[hb]   step=  57000 elapsed=1493s
+[hb]   step=  58000 elapsed=1520s
+[hb]   step=  59000 elapsed=1547s
+[hb]   step=  60000 elapsed=1574s
+[eval] step=  60000 elapsed=1574s success_rate=1.00 mean_reward=+1.00
+[stop] step=60000 elapsed=1574s early-stop after 2 perfect evals; saved model_checkpoint.zip

@@ -16,6 +16,7 @@ import time
 import gymnasium as gym
 import gymnasium_robotics
 import numpy as np
+import torch
 from sb3_contrib import TQC
 from stable_baselines3 import SAC, TD3
 from stable_baselines3.common.callbacks import BaseCallback
@@ -23,17 +24,37 @@ from stable_baselines3.her.her_replay_buffer import HerReplayBuffer
 
 gym.register_envs(gymnasium_robotics)
 
+
+# Device selection. Apple MPS was empirically catastrophic on this workload
+# (single-env MuJoCo + small MLP): step rate degrades from ~35/s to <1/s after
+# ~5k env steps, likely allocator thrash. CPU is preferred. We still pick CUDA
+# when available. Use ~perf cores on M-series for the BLAS path.
+def _pick_device() -> str:
+    if torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
+
+
+DEVICE = _pick_device()
+if DEVICE == "cpu":
+    # M4 has 4 performance cores; SB3 uses single-thread inference but BLAS
+    # in the gradient path benefits from a few threads.
+    torch.set_num_threads(min(4, torch.get_num_threads()))
+
 # === CONFIGURATION ===
 ALGORITHM = "TQC"
 ENV_NAME = "FrankaKitchen-v1"
-SUBTASK = "microwave"
+SUBTASK = "slide cabinet"
 MAX_EPISODE_STEPS = 280
 TIME_BUDGET = 3600  # 1h default; FrankaKitchen episodes are ~6x longer than Fetch tasks
 
 HYPERPARAMS = {
     "learning_rate": 1e-3,
     "batch_size": 512,
-    "buffer_size": 1_000_000,
+    # 200k transitions is ~3x the longest single-task run; keeping the buffer
+    # small avoids macOS memory pressure after several back-to-back runs in
+    # one session. Original 1M caused step-rate collapse from compressor/swap.
+    "buffer_size": 200_000,
     "tau": 0.005,
     "gamma": 0.95,
     "learning_starts": 1000,
@@ -49,12 +70,24 @@ HER_KWARGS = {
 ALGOS = {"SAC": SAC, "TD3": TD3, "TQC": TQC}
 OFF_POLICY = {"SAC", "TD3", "TQC"}
 
-# Microwave handle joint goal value (qpos index 22 in raw env, exposed as
-# obs["achieved_goal"][0] after FlattenSingleSubtaskGoal — DO NOT use
-# obs["observation"][22], that index is the top right burner knob, not the
-# microwave). Success: |handle - GOAL| < BONUS_THRESH.
-MICROWAVE_GOAL = -0.75
+# Built into the env: success when ||achieved_goal - desired_goal|| < BONUS_THRESH
 BONUS_THRESH = 0.3
+
+# Per-subtask MuJoCo site name for the geometric "where to put the gripper"
+# target. The end-effector → target Euclidean distance is what gives the
+# policy a smooth gradient toward contact during the long random-exploration
+# phase. The joint-space `achieved_goal` distance alone has no entry path
+# because the arm essentially never reaches the target by chance in 280
+# steps. Sites verified to exist on the loaded MuJoCo model.
+SUBTASK_TARGET_SITES = {
+    "microwave":      "microhandle_site",
+    "slide cabinet":  "slide_site",
+    "hinge cabinet":  "hinge_site2",   # right door — desired_goal moves index 1, the right hinge
+    "light switch":   "light_site",
+    "kettle":         "kettle_site",
+    "bottom burner":  "knob2_site",
+    "top burner":     "knob4_site",
+}
 
 
 # === GOAL FLATTEN WRAPPER ===
@@ -67,19 +100,21 @@ class FlattenSingleSubtaskGoal(gym.ObservationWrapper):
         self.subtask = subtask
         sample_obs, _ = env.reset()
         goal_shape = sample_obs["achieved_goal"][subtask].shape
+        # Everything is float32 — Apple MPS doesn't support float64.
+        obs_shape = sample_obs["observation"].shape
         self.observation_space = gym.spaces.Dict(
             {
-                "observation": env.observation_space["observation"],
-                "achieved_goal": gym.spaces.Box(-np.inf, np.inf, goal_shape, np.float64),
-                "desired_goal": gym.spaces.Box(-np.inf, np.inf, goal_shape, np.float64),
+                "observation": gym.spaces.Box(-np.inf, np.inf, obs_shape, np.float32),
+                "achieved_goal": gym.spaces.Box(-np.inf, np.inf, goal_shape, np.float32),
+                "desired_goal": gym.spaces.Box(-np.inf, np.inf, goal_shape, np.float32),
             }
         )
 
     def observation(self, obs):
         return {
-            "observation": obs["observation"],
-            "achieved_goal": np.asarray(obs["achieved_goal"][self.subtask], dtype=np.float64),
-            "desired_goal": np.asarray(obs["desired_goal"][self.subtask], dtype=np.float64),
+            "observation": np.asarray(obs["observation"], dtype=np.float32),
+            "achieved_goal": np.asarray(obs["achieved_goal"][self.subtask], dtype=np.float32),
+            "desired_goal": np.asarray(obs["desired_goal"][self.subtask], dtype=np.float32),
         }
 
     def compute_reward(self, achieved_goal, desired_goal, info):
@@ -89,56 +124,52 @@ class FlattenSingleSubtaskGoal(gym.ObservationWrapper):
 
 
 # === REWARD WRAPPER ===
-# Iteration 1 (2026-04-22): Fix obs-index bug + add end-effector proximity.
-#
-# Why the previous version was broken: MICROWAVE_OBS_IDX=22 was a qpos index,
-# but the code used it as an obs-vector index. obs[22] is the top right burner
-# knob; the microwave joint is actually at obs[31] (or, cleanly,
-# obs["achieved_goal"][0] after FlattenSingleSubtaskGoal). HER still got
-# correct sparse signal via achieved_goal, but the dense distance term was
-# regressing against the wrong joint, providing zero useful gradient toward
-# opening the microwave.
-#
-# Two dense components, both pulled directly from MuJoCo state:
-#   (1) handle_distance: |microwave joint - GOAL|, from achieved_goal
-#   (2) ee_to_handle:    Euclidean distance from the Franka end-effector
-#                        site to the microwave handle site (real xyz, no
-#                        forward kinematics needed). This addresses the
-#                        primary failure mode in long-horizon kitchen RL —
-#                        the arm never gets near the handle in 280 steps
-#                        of random exploration, so there is no signal for
-#                        the joint-distance term to ever become useful.
+# The reward template that solved microwave in iter1, generalized over any
+# FrankaKitchen subtask. Two dense components plus a sparse bonus:
+#   (1) goal_distance: ||achieved_goal - desired_goal|| in joint space.
+#       Works for 1-D (microwave/slide/burner-component) and N-D
+#       (hinge cabinet 2-D, kettle 7-D pose) goals identically.
+#   (2) ee_to_target:  Euclidean distance from the Franka end-effector
+#                      site to the subtask's geometric target site
+#                      (table at SUBTASK_TARGET_SITES). This addresses the
+#                      primary failure mode in long-horizon kitchen RL —
+#                      the arm essentially never reaches the target by
+#                      chance in 280 steps, so the goal_distance term
+#                      alone has no entry path.
+#   (3) success_bonus: large positive reward inside the env's BONUS_THRESH.
 class RewardWrapper(gym.Wrapper):
-    """Custom reward function discovered through autonomous experimentation."""
+    """Subtask-agnostic shaped reward (joint-distance + EE-proximity + bonus)."""
 
     def __init__(self, env):
         super().__init__(env)
         unwrapped = env.unwrapped
+        target_site_name = SUBTASK_TARGET_SITES[SUBTASK]
         self._ee_site_id = unwrapped.model.site("end_effector").id
-        self._handle_site_id = unwrapped.model.site("microhandle_site").id
+        self._target_site_id = unwrapped.model.site(target_site_name).id
         self._sim_data = unwrapped.data
 
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
 
-        handle_pos = float(obs["achieved_goal"][0])
-        handle_distance = abs(handle_pos - MICROWAVE_GOAL)
+        goal_distance = float(np.linalg.norm(
+            obs["achieved_goal"] - obs["desired_goal"]
+        ))
 
         ee_xyz = self._sim_data.site_xpos[self._ee_site_id]
-        handle_xyz = self._sim_data.site_xpos[self._handle_site_id]
-        ee_to_handle = float(np.linalg.norm(ee_xyz - handle_xyz))
+        target_xyz = self._sim_data.site_xpos[self._target_site_id]
+        ee_to_target = float(np.linalg.norm(ee_xyz - target_xyz))
 
-        success_bonus = 1.0 if handle_distance < BONUS_THRESH else 0.0
+        success_bonus = 1.0 if goal_distance < BONUS_THRESH else 0.0
 
         shaped_reward = (
-            -1.0 * handle_distance      # drive joint to goal
-            - 1.0 * ee_to_handle        # bring gripper to handle
+            -1.0 * goal_distance        # drive joint(s) to goal
+            - 1.0 * ee_to_target        # bring gripper to target site
             + 5.0 * success_bonus       # large bonus on success
         )
 
         info["reward_components"] = {
-            "handle_distance": handle_distance,
-            "ee_to_handle": ee_to_handle,
+            "goal_distance": goal_distance,
+            "ee_to_target": ee_to_target,
             "success_bonus": success_bonus,
             "shaped_total": float(shaped_reward),
             "sparse_success": float(bool(info.get("step_task_completions"))),
@@ -194,6 +225,10 @@ class ProgressEvalCallback(BaseCallback):
     in real time even when stdout is buffered by `tee` or a parent harness.
     Also emits a heartbeat every `heartbeat_steps` so we can confirm the loop
     is alive before the first eval.
+
+    Early-stops as soon as `early_stop_consecutive` evals in a row return
+    SR=1.00, saving the model to `model_checkpoint.zip` before requesting stop
+    so we don't lose a perfect policy when the runner exits.
     """
 
     def __init__(
@@ -201,6 +236,7 @@ class ProgressEvalCallback(BaseCallback):
         eval_every_steps: int = 5_000,
         num_eval_episodes: int = 3,
         heartbeat_steps: int = 1_000,
+        early_stop_consecutive: int = 2,
     ):
         super().__init__()
         self._eval_every = eval_every_steps
@@ -210,6 +246,8 @@ class ProgressEvalCallback(BaseCallback):
         self._next_heartbeat = heartbeat_steps
         self._best_sr = 0.0
         self._start_time = None
+        self._early_stop_consecutive = early_stop_consecutive
+        self._consecutive_perfect = 0
 
     def _write(self, line: str) -> None:
         with open(PROGRESS_LOG, "a") as f:
@@ -223,7 +261,10 @@ class ProgressEvalCallback(BaseCallback):
 
     def _on_training_start(self):
         self._start_time = time.time()
-        self._write(f"[start] {time.strftime('%H:%M:%S')} algo={ALGORITHM}")
+        self._write(
+            f"[start] {time.strftime('%H:%M:%S')} algo={ALGORITHM} "
+            f"subtask={SUBTASK!r} device={DEVICE} time_budget={TIME_BUDGET}s"
+        )
 
     def _on_step(self):
         elapsed = int(time.time() - (self._start_time or time.time()))
@@ -240,6 +281,20 @@ class ProgressEvalCallback(BaseCallback):
                 f"[eval] step={self.num_timesteps:>7} elapsed={elapsed:>4}s "
                 f"success_rate={sr:.2f} mean_reward={mr:+.2f}{tag}"
             )
+
+            if sr >= 1.0:
+                self._consecutive_perfect += 1
+            else:
+                self._consecutive_perfect = 0
+
+            if self._consecutive_perfect >= self._early_stop_consecutive:
+                self.model.save("model_checkpoint")
+                self._write(
+                    f"[stop] step={self.num_timesteps} elapsed={elapsed}s "
+                    f"early-stop after {self._consecutive_perfect} perfect evals; "
+                    f"saved model_checkpoint.zip"
+                )
+                return False
         return True
 
 
@@ -254,7 +309,7 @@ def train():
         kwargs["replay_buffer_class"] = HerReplayBuffer
         kwargs["replay_buffer_kwargs"] = dict(HER_KWARGS)
 
-    model = algo_cls("MultiInputPolicy", env, verbose=0, **kwargs)
+    model = algo_cls("MultiInputPolicy", env, verbose=0, device=DEVICE, **kwargs)
     callbacks = [TimeBudgetCallback(TIME_BUDGET), ProgressEvalCallback()]
     model.learn(total_timesteps=10_000_000, callback=callbacks)
     return model
