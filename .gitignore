@@ -5,27 +5,19 @@ __pycache__/
 dist/
 build/
 .venv/
+/registry/
+model_checkpoints/
 .DS_Store
 .ruff_cache/
-
-# Training artifacts
-/registry/
-/failures/
-model_checkpoint*
-results.tsv
+overnight_run.log
+long_train.log
 *.mp4
-*.log
 
 # Local working docs
 /notes/
 constitution/
-
-# Old project version — DO NOT TOUCH
-_archive_v1_DO_NOT_TOUCH/
+pickandplace_train.log
 
 # Keep assets for README
 !assets/*.gif
 !assets/*.png
-
-# Keep per-iteration progress logs as experiment evidence
-!iter*_progress.log

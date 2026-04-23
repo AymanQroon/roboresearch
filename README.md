@@ -1,109 +1,220 @@
 # RoboResearch
 
-**An agentic RL pipeline for FrankaKitchen manipulation, driven by Claude Code as the orchestrator.**
+**Autonomous agentic AI system for robot manipulation research**
 
-Claude Code edits `train.py` directly: writes the reward wrapper, kicks off training, parses the success rate, diagnoses failures (via env introspection or rendered rollouts), and iterates. The agent commits when an experiment improves the success rate and reverts when it doesn't, so git history doubles as the experiment log.
+RoboResearch applies Karpathy's [autoresearch](https://github.com/karpathy/autoresearch) concept to robotics. It autonomously plans experiments, trains RL policies in MuJoCo simulation, evaluates performance, visually analyzes failures using a VLM, and iterates — no human in the loop. The system runs overnight, and you wake up to a better robot.
 
-## Results
-
-All 7 FrankaKitchen-v1 subtasks solved with the **same dense-reward template**, single-CPU laptop, no per-task hyperparameter tuning. Each was trained from scratch with TQC + HER until the in-training eval hit 100% on two consecutive checks (the early-stop criterion), then saved.
-
-| # | Subtask | Goal dim | Steps to first 100% | Wall-clock | Model |
-|---|---|---|---|---|---|
-| 1 | microwave | 1 | 20k | 9 min | `iter1_microwave_TQC.zip` |
-| 2 | slide cabinet | 1 | 50k | 25 min | `iter2_slide_cabinet_TQC.zip` |
-| 3 | hinge cabinet | 2 | 70k | 38 min | `iter3_hinge_cabinet_TQC.zip` |
-| 4 | light switch | 2 | 55k | 32 min | `iter4_light_switch_TQC.zip` |
-| 5 | bottom burner | 2 | 55k | 24 min | `iter5_bottom_burner_TQC.zip` |
-| 6 | top burner | 2 | 60k | 26 min | `iter6_top_burner_TQC.zip` |
-| 7 | kettle (xyz + quat) | 7 | 30k | 13 min | `iter7_kettle_TQC.zip` |
-
-Eval protocol: 3-episode deterministic eval every 5k steps; "first 100%" is the first eval that hit `subtask in info["episode_task_completions"]` on all 3 episodes. Final 20-episode evals after early-stop are in `progress.log` files per iteration.
-
-### Untrained vs trained (final frame, deterministic rollout)
-
-![microwave](assets/microwave_before_after.png)
-![slide cabinet](assets/slide_cabinet_before_after.png)
-![hinge cabinet](assets/hinge_cabinet_before_after.png)
-![light switch](assets/light_switch_before_after.png)
-![bottom burner](assets/bottom_burner_before_after.png)
-![top burner](assets/top_burner_before_after.png)
-![kettle](assets/kettle_before_after.png)
-
-## The reward template
-
-A single dense reward, parameterised by which MuJoCo site the gripper should approach:
-
-```python
-shaped_reward = (
-    -1.0 * goal_distance        # ||achieved_goal − desired_goal||
-    -1.0 * ee_to_target         # ||ee_xyz − target_site_xyz||
-    +5.0 * success_bonus        # 1 if goal_distance < 0.3 else 0
-)
-```
-
-`SUBTASK_TARGET_SITES` maps each subtask to the relevant MuJoCo site (`microhandle_site`, `slide_site`, `hinge_site2`, `light_site`, `kettle_site`, `knob2_site`, `knob4_site`). The `ee_to_target` term gives the policy a smooth gradient toward contact during the long random-exploration phase — the joint-space `goal_distance` term alone has no entry path because the arm essentially never reaches the target by chance in 280 steps.
-
-## What's *not* novel here
-
-- TQC + HER on goal-conditioned manipulation is a textbook recipe.
-- Dense `goal_distance + ee_proximity + bonus` reward shaping is the standard from the original HER paper era.
-- Individual FrankaKitchen subtasks have been solved before with demos + offline RL (Relay Policy Learning, D4RL Kitchen leaderboard).
-- The harder benchmark — sequential 4-subtask chains — also has strong published baselines using offline learning and diffusion / transformer policies.
-
-This repo is **a clean engineering demonstration of an agentic RL workflow**, not a research contribution. The unique angle is the closed-loop process (Claude Code reading env source, diagnosing reward bugs by introspection, iterating on hyperparameters and the reward template) — not the underlying RL math.
-
-## Notable bugs the agent caught
-
-- **iter0 → iter1:** `MICROWAVE_OBS_IDX = 22` was being used as an obs-vector index but is actually a qpos index. The dense distance term was regressing against the wrong joint (top-right burner knob), giving zero useful gradient. Fixed by using `obs["achieved_goal"]` directly. Microwave went from unsolvable to 100% SR after the fix.
-- **iter3 hinge cabinet:** initial `SUBTASK_TARGET_SITES["hinge cabinet"] = "hinge_site1"` pointed the EE-proximity term at the LEFT door, but `desired_goal=[0, 1.45]` only requires the RIGHT door (index 1) to open. The dense gradient was actively pulling the arm to the wrong cabinet. Caught by env introspection (printing all hinge-related sites + their xyz). Fixed → SR 0% → 100% in one rerun.
-- **iter6 top burner:** training stalled hard (~1s/step) after step 8k. Diagnosed as macOS memory pressure / compressor thrashing from the 1M-transition replay buffer. Shrunk `buffer_size` to 200k → run completed cleanly.
+---
 
 ## Architecture
 
 ```
-train.py     The only editable file — RewardWrapper, env factory, hyperparams
-prepare.py   Read-only evaluation infrastructure + reward-component logging
-program.md   Agent contract for the autonomous loop
-mcp/         FastMCP servers for simulation, evaluation, registry (read-only)
-.mcp.json    MCP server config for Claude Code
-scripts/     One-off scripts (e.g., render_demos.py for the gallery above)
+                     ORCHESTRATOR (Claude Opus)
+              Plans experiments, manages research loop
+
+   Experiment Coder       Failure Analyst       Quick Evaluator
+      (Sonnet)             (Opus VLM)              (Haiku)
+   Writes config        Watches sim frames      Keep/discard
+   modifications        finds WHY it failed      decisions
+        |                     |                      |
+   MCP Server            MCP Server             MCP Server
+   SIMULATION            EVALUATION              REGISTRY
+        |                     |                      |
+        +---------------------+----------------------+
+                              |
+               MuJoCo / Gymnasium-Robotics
+            Robot Manipulation Environments
+
+        FetchReach ---------> FetchPush ---------> FetchPickAndPlace
+          (easy)  auto-graduate  (medium)  auto-graduate    (hard)
 ```
 
-`prepare.py` reloads `train.py` on every call (`importlib.reload`), so the MCP servers always see the agent's latest edits without a restart.
+## Demo
 
-## Quick start
+### FetchReach — 100% success in 3 experiments
+
+The system masters the reaching task immediately, then auto-graduates to pushing.
+
+| Random Policy (untrained) | Trained Policy (SAC) |
+|:---:|:---:|
+| ![Random](assets/reach_random.gif) | ![Solved](assets/reach_solved.gif) |
+
+### FetchPush — 98% success rate
+
+The system graduates to the harder pushing task and trains SAC with HER (Hindsight Experience Replay) to push a block to a goal position.
+
+| Random Policy (untrained) | Trained Policy (SAC + HER) |
+|:---:|:---:|
+| ![Random](assets/push_random.gif) | ![Solved](assets/push_solved.gif) |
+
+### FetchPickAndPlace — 100% success rate
+
+The hardest Fetch task: the robot must pick up a block and place it at a goal that can be in the air. Requires learning grip control, lifting, and precise placement.
+
+| Random Policy (untrained) | Trained Policy (SAC + HER) |
+|:---:|:---:|
+| ![Random](assets/pickplace_random.gif) | ![Solved](assets/pickplace_solved.gif) |
+
+### Learning Curves
+
+![Learning Curves](assets/learning_curve.png)
+
+Both tasks show the characteristic RL learning pattern: slow initial exploration, rapid improvement as HER relabeling kicks in, then convergence near 100%. FetchPush converges in 500K steps (~50 min), FetchPickAndPlace in 750K steps (~83 min on Apple Silicon).
+
+### Autonomous Experiment Log
+
+The system ran autonomous experiments across three tasks, demonstrating the full research loop — planning, training, evaluating, switching algorithms, and iterating:
+
+```
+run_id    env                      algo  success_rate  notes
+run_001   FetchReach-v4            SAC   1.000         baseline
+run_002   FetchReach-v4            SAC   1.000         replicate
+run_003   FetchReach-v4            SAC   1.000         <- graduated to FetchPush
+run_004   FetchPush-v4             SAC   0.200         push baseline
+run_005   FetchPush-v4             SAC   0.200         + HER enabled
+run_006   FetchPush-v4             SAC   0.000         smaller net (discarded)
+run_009   FetchPush-v4             TD3   0.100         algorithm switch
+run_014   FetchPush-v4             TD3   0.150         TD3 peak
+run_017   FetchPush-v4             SAC   0.100         back to SAC
+run_024   FetchPush-v4             SAC   0.980         extended training (500K steps)
+run_025   FetchPickAndPlace-v4     SAC   1.000         extended training (750K steps)
+```
+
+The autonomous loop demonstrates algorithm switching (SAC/TD3), warm-starting from checkpoints, VLM failure analysis, keep/discard decision-making, and curriculum advancement across three task difficulties.
+
+## How It Works
+
+The system runs an autonomous research loop:
+
+```
+LOOP:
+  1. PLAN     -> Orchestrator reviews past results + failure analysis
+  2. CODE     -> Experiment Coder generates new training config
+  3. TRAIN    -> SAC/PPO/TD3 trains in MuJoCo (warm-start from best checkpoint)
+  4. EVAL     -> Run evaluation episodes, compute success rate
+  5. ANALYZE  -> VLM watches frames of failed episodes, diagnoses WHY
+  6. DECIDE   -> Improved? KEEP. Worse? DISCARD.
+  7. ADAPT    -> Switch algorithms or graduate to harder tasks when ready
+  8. REPEAT
+```
+
+Each model is chosen for a reason — not "use the biggest model everywhere":
+
+| Agent | Model | Why |
+|-------|-------|-----|
+| **Orchestrator** | Claude Opus | Complex reasoning about research direction and strategy |
+| **Experiment Coder** | Claude Sonnet | Fast code generation, cost-effective for frequent modifications |
+| **Failure Analyst** | Claude Opus (VLM) | Vision capabilities to understand spatial/physical failures from simulation frames |
+| **Quick Evaluator** | Claude Haiku | Lightweight metric parsing, fast keep/discard decisions |
+
+### Key Design Decisions
+
+- **Warm-starting**: Each experiment loads the best previous checkpoint and continues training. Critical for RL where cumulative steps matter — the autoresearch "start fresh" pattern doesn't work for policy optimization.
+- **HER (Hindsight Experience Replay)**: Automatically enabled for goal-conditioned Fetch environments with SAC/TD3. Relabels failed trajectories as successes for alternative goals, dramatically improving sample efficiency on sparse-reward tasks.
+- **Algorithm switching**: If 5 consecutive experiments show no improvement, the orchestrator switches algorithms (SAC -> TD3 -> PPO) to escape local optima.
+- **Task graduation**: 3 consecutive experiments with >80% success rate triggers automatic curriculum advancement (FetchReach -> FetchPush -> FetchPickAndPlace).
+
+## MCP Tool Servers
+
+Three Python MCP servers expose standardized tool interfaces:
+
+### Simulation Server
+- `configure_env` — Create Gymnasium-Robotics environments
+- `run_training` — Launch RL training with time-budget stopping
+- `capture_frames` — Render simulation frames for VLM analysis
+- `get_training_log` — Parse training metrics
+- `reset_env` — Clean up environment state
+
+### Evaluation Server
+- `run_evaluation` — Run deterministic evaluation episodes
+- `compute_metrics` — Success rate, reward, episode length
+- `compare_runs` — Side-by-side run comparison
+- `get_failure_episodes` — Extract failed episodes with frame sequences
+- `generate_report` — Full markdown experiment report
+
+### Registry Server
+- `save_checkpoint` — Store model + config + metrics
+- `load_checkpoint` — Retrieve experiment data
+- `list_experiments` — Query experiment history
+- `get_best_model` — Find best model for a task
+- `diff_configs` — Compare experiment configurations
+
+## Dashboard
+
+A Streamlit dashboard monitors the system in real time:
+
+- Live experiment progress and learning curves
+- Agent decision timeline with reasoning
+- Cost tracker (per-agent token usage)
+- Episode video playback (successes and failures)
 
 ```bash
+streamlit run roboresearch/dashboard/app.py
+```
+
+## Quick Start
+
+```bash
+# Clone
 git clone https://github.com/aymanqroon/roboresearch.git
 cd roboresearch
 
+# Install
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
 
-# Run a single experiment
-python train.py             # writes model_checkpoint.zip + progress.log
+# Configure — Option A: Direct Anthropic API
+export ANTHROPIC_API_KEY=sk-ant-...
 
-# Re-render the gallery
-python scripts/render_demos.py
+# Configure — Option B: GCP Vertex AI
+# Set up GCP auth (gcloud auth application-default login)
+# Optionally set VERTEX_PROJECT_ID and VERTEX_REGION env vars
+
+# Run
+python -m roboresearch.main --max-experiments 50 --time-budget 300
 ```
 
-## Tech stack
+## Project Structure
 
-| Component | Tool |
-|-----------|------|
-| Agent | Claude Code |
-| Simulation | MuJoCo + Gymnasium-Robotics (FrankaKitchen-v1) |
-| RL algorithms | Stable-Baselines3 + sb3-contrib (TQC + HER) |
-| Tool interface | MCP (FastMCP) |
-| DL backend | PyTorch (CPU) |
+```
+roboresearch/
+  agents/
+    client.py              # LLM client factory (Anthropic API / Vertex AI)
+    orchestrator.py         # Main research loop + experiment planning
+    experiment_coder.py     # Generates training configs from natural language plans
+    failure_analyst.py      # VLM-based visual failure diagnosis
+    quick_evaluator.py      # Fast keep/discard decisions
+  mcp_servers/
+    simulation/server.py    # MuJoCo environment + training tools
+    evaluation/server.py    # Model evaluation + metrics tools
+    registry/server.py      # Experiment tracking + checkpoint tools
+  training/
+    trainer.py              # SB3 training wrapper (SAC, PPO, TD3 + HER)
+    evaluator.py            # Evaluation episodes + metrics
+    recorder.py             # Video recording for demos
+    configs.py              # Default hyperparameter configs
+    env_utils.py            # Gymnasium-Robotics environment setup
+  dashboard/
+    app.py                  # Streamlit dashboard
+    pages/                  # Learning curves, experiment log, cost tracker, videos
+  main.py                   # Entry point
+scripts/
+  generate_demos.py         # Generate GIFs and charts from trained models
+program.md                  # Human-written research directions (the "prompt")
+```
 
-## What would actually be novel from here
+## Tech Stack
 
-- **Multi-task chains** (e.g., microwave → bottom_burner → top_burner → light_switch) without demos. Hard but not unprecedented; the simple template will fail and a real curriculum is needed.
-- **VLM-driven reward iteration** — Claude reads failure rollouts as a vision model and proposes the next reward (the original program.md contract). This was *not* exercised in the work above; the simple template worked first try and never required visual diagnosis.
-- **Cross-task transfer** — train one policy that generalises across all 7 subtasks rather than 7 separate policies.
+| Component | Tool | Why |
+|-----------|------|-----|
+| Agent Orchestration | Anthropic SDK + custom | Full control over model selection, tool binding, and cost |
+| Tool Interface | MCP Python SDK | Standardized, composable tool servers |
+| Simulation | MuJoCo + Gymnasium-Robotics | Industry standard, free |
+| RL Algorithms | Stable-Baselines3 (SAC/PPO/TD3) | Battle-tested, focus on the agentic system |
+| Deep Learning | PyTorch | Backend for SB3 |
+| Dashboard | Streamlit + Plotly | Zero frontend code, interactive charts |
+| Experiment Tracking | Git + TSV + JSON | Autoresearch pattern — git history IS the research narrative |
 
 ---
 
